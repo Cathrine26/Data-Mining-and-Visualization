@@ -1,0 +1,299 @@
+---
+title: "AoL_DMV"
+output: html_document
+date: "2024-06-02"
+---
+
+We decide to use 3 dataset as we want to try to analyze the correlation between air pollution in jakarta, green area and the ownership of private vehicle in Jakarta. As jakarta felt very gray and very hot, and the street is always packed, we want to know whether they have correlation to each other
+The SDG we choose for this project are 11th "Sustainable Cities and Communities", 13th "Climate Action" and 15th "Life on Land"
+
+```{r}
+setwd("C:/Kuliah/Semester 2/DMV/AoL Project")
+
+dfcar <- read.csv("JmlhKendaraanBermotor_Jakarta.csv")
+dfgreen <- read.csv("Jmlh_Lapangan_Terbuka_Hijau.csv")
+dfpolut <- read.csv("IndeksPencemaranUdara_Jakarta.csv")
+```
+
+```{r}
+print(dfcar)
+```
+
+```{r}
+print(dfgreen)
+```
+
+We only need the 2021 year data as all of the data are from 2021 (outdated perhaps, but still SDG)
+
+```{r}
+subsetcar <- dfcar[c(1,3)]
+subsetcar
+```
+
+```{r}
+unique(dfgreen$Jenis)
+```
+
+We also make sure that we only gather data for green open space, so we filter the dataframe
+
+```{r}
+subsetgreen <- dfgreen[dfgreen$Jenis %in% c("Taman Kota dan Taman Lingkungan", "Taman Interaktif", "Jalur Hijau Jalan & Pedestrian", "Jalur Hijau Tepian Air & Penyempurna") & dfgreen$Kota.Adm != "Kep. Seribu", ]
+subsetgreen
+```
+
+Using the dpylr library to use piping, we count the total area of the green area in Jakarta for further analysis, we're planning to compare it to total area of jakarta and see how many percentage are the green compared to the gray, then to visualize this in the poster (graphical visualization) we'll choose a map
+
+```{r}
+
+library(dplyr)
+
+totalgreen <- subsetgreen %>%
+  group_by(Kota.Adm) %>%
+  summarise(Total_Jumlah = sum(Jumlah), Total_Luas = sum(Luas))
+
+latitude <- c(-6.2088, -6.1894, -6.2615, -6.2297, -6.1396)
+longitude <- c(106.7831, 106.8323, 106.8106, 106.8701, 106.8827)
+
+totalgreen$Latitude <- latitude
+totalgreen$Longitude <- longitude
+
+totalgreen
+```
+
+As the January one do not have data for PM25, i suppose we might just exclude January from our analysis
+
+```{r}
+dfpolut$Tanggal <- as.Date(dfpolut$tanggal, format = "%m/%d/%Y")
+
+start_date <- as.Date("2021-01-01")
+end_date <- as.Date("2021-01-31")
+
+subsetpolut <- dfpolut[!(dfpolut$Tanggal >= start_date & dfpolut$Tanggal  <= end_date), ]
+
+print(subsetpolut)
+
+```
+
+We try to find missing value but we don't get any
+
+```{r}
+colSums(is.na(subsetpolut))
+```
+
+After that we also try to find outlier and from the dot, and certainly there are outliers
+
+```{r}
+boxplot(subsetpolut$pm10, main = "pm10")
+boxplot(subsetpolut$pm25, main = "pm25")
+boxplot(subsetpolut$so2, main = "so2")
+boxplot(subsetpolut$co, main = "co")
+boxplot(subsetpolut$o3, main = "o3")
+boxplot(subsetpolut$no2, main = "no2")
+```
+
+```{r}
+numpolut <- subsetpolut[,c(2:7)]
+
+Outlier <- function(x, thres = 1.5){
+  Q1 <- quantile(x, 0.25)
+  Q3 <- quantile(x, 0.75)
+  IQR_Value <- IQR(x)
+  lower_bound <- Q1 - thres*IQR_Value
+  upper_bound <- Q3 + thres*IQR_Value
+  outliers <- x[x < lower_bound | x > upper_bound]
+  return(outliers)
+}
+ 
+outlier_count <-sapply(numpolut, function(x) length(Outlier(x)))
+print(outlier_count)
+```
+
+We already try to impute the outlier as our handling method but it didn't work quite well as it made the data become bias to certain critical category, and we cannot delete it because of the monthly data so we might just let them there
+
+
+We label the DKI1 - DKI5 as the location, DKI is the SPKU location and it's scattered each on one region in Jakarta
+
+```{r}
+library(dplyr)
+
+location_label <- c("DKI1" = "Jakarta Pusat", "DKI2" = "Jakarta Utara", "DKI3" = "Jakarta Selatan", "DKI4" = "Jakarta Timur", "DKI5" = "Jakarta Barat")
+
+subsetpolut <- subsetpolut %>%
+  mutate(location = case_when(
+    location == "DKI1" ~ "Jakarta Pusat",
+    location == "DKI2" ~ "Jakarta Utara",
+    location == "DKI3" ~ "Jakarta Selatan",
+    location == "DKI4" ~ "Jakarta Timur",
+    location == "DKI5" ~ "Jakarta Barat",
+    TRUE ~ as.character(location)  
+  ))
+
+subsetpolut
+```
+
+Here we count how many each critical occured to each location, but as this data is mostly filled with DKI4, we cannot consider this as the most useful insight because of the data bias
+
+```{r}
+critpolut <- subsetpolut %>% group_by(location) %>%
+  summarise(
+    pm10 = sum(critical == "PM10", na.rm = TRUE),
+    pm25 = sum(critical == "PM25", na.rm = TRUE),
+    so2 = sum(critical == "SO2", na.rm = TRUE),
+    co = sum(critical == "CO", na.rm = TRUE),
+    o3 = sum(critical == "O3", na.rm = TRUE),
+    no2 = sum(critical == "NO2", na.rm = TRUE)
+  )
+  
+critpolut
+```
+
+and this is how many each SPKU contributed to the 334 days of the dataframe
+
+```{r}
+contribution <- subsetpolut %>%
+  group_by(location) %>%
+  summarise(contributions = n())
+
+contribution
+```
+
+this is just the horizontal version
+
+```{r}
+critpolut2 <- subsetpolut %>% group_by(critical) %>%
+  summarise(
+    JakBar= sum(location == "Jakarta Barat", na.rm = TRUE),
+    JakTim = sum(location == "Jakarta Timur", na.rm = TRUE),
+    JakPus = sum(location == "Jakarta Pusat", na.rm = TRUE),
+    JakUt = sum(location == "Jakarta Utara", na.rm = TRUE),
+    JakSel = sum(location == "Jakarta Selatan", na.rm = TRUE),
+  )
+  
+critpolut2
+```
+
+Here we use mutate function to change the date formatting, because we want to harvest the monthly information of each pollutant critical occurence, and turns out PM5 is still dominating
+
+```{r}
+subsetpolut <- subsetpolut %>%
+  mutate(month = format(Tanggal, "%Y-%m"))
+
+critical_counts_monthly <- subsetpolut %>%
+  group_by(month) %>%
+  summarise(
+    pm10 = sum(critical == "PM10", na.rm = TRUE),
+    pm25 = sum(critical == "PM25", na.rm = TRUE),
+    so2 = sum(critical == "SO2", na.rm = TRUE),
+    co = sum(critical == "CO", na.rm = TRUE),
+    o3 = sum(critical == "O3", na.rm = TRUE),
+    no2 = sum(critical == "NO2", na.rm = TRUE)
+  )
+
+print(critical_counts_monthly)
+```
+
+we want to see how many pollution of each category have been recorded at each location and count the total of each category
+
+```{r}
+category_counts <- subsetpolut %>%
+  group_by(location, categori) %>%
+  summarise(count = n())
+
+print(category_counts)
+```
+
+```{r}
+categories <- subsetpolut %>%
+  group_by(categori) %>%
+  summarise(count = n())
+
+print(categories)
+```
+
+we want to know how many pollutions event have been recorded in each month at every location
+
+```{r}
+month_counts <- subsetpolut %>%
+  group_by(month, location) %>%
+  summarise(count = n())
+
+print(month_counts)
+```
+
+we merge the susetgreen and category-count by the location so that we can see the green area, the condition of that location, and the type of place occurrance more easily
+
+```{r}
+colnames(subsetgreen) <- c("location","jenis", "jumlah", "luas")
+
+greenmonth <- merge(subsetgreen, category_counts, by = "location", all.x = T)
+greenmonth
+```
+
+```{r}
+library(ggplot2)
+```
+
+this is the bar plot of every types of vehicles in 2021
+
+```{r}
+ggplot(subsetcar, aes(x = Jenis.Kendaraan, y = X2021)) +
+  geom_bar(stat = "identity") +
+  labs(y = "Scaled X2021 Values", x = "Jenis Kendaraan") +
+  ggtitle("Bar Plot of Scaled X2021 Values by Jenis Kendaraan")
+```
+
+we want to see how the sum of vehicles effect the green area of each region
+
+```{r}
+ggplot(totalgreen, aes(x = "", y = Kota.Adm, fill = Total_Jumlah)) + geom_bar(width = 1, stat = "identity") + coord_polar(theta = "y") + labs(fill = "Jenis Kendaraan") + ggtitle("Distribution of green area each region")
+```
+
+and this is the pie chart of pollution level in Jakarta
+
+```{r}
+ggplot(categories, aes(x = 2, y = count, fill = categori)) + geom_bar(stat = "identity", width = 1) + coord_polar(theta = "y", start = 0) + geom_bar(stat = "identity", width = 0.5, aes(y=0)) + xlim(0.5, 2.5) + labs(fill = "Tingkat Kesehatan") + theme_bw() + ggtitle("Tingkat polusi udara Jakarta pada 2021")
+```
+
+we want to see the SPKU contribution in each region
+
+```{r}
+ggplot(contribution, aes(x = 2, y = contributions, fill = location)) + geom_bar(stat = "identity", width = 1) + coord_polar(theta = "y", start = 0) + geom_bar(stat = "identity", width = 0.5, aes(y=0)) + xlim(0.5, 2.5) + labs(fill = "Kabupaten") + theme_bw() + ggtitle("Tingkat kontribusi SPKU per daerah 2021")
+```
+
+and this is the monthly contribution, in here we can see that SPKU mainlu focuses in Jakarta Timur than the other region
+
+```{r}
+ggplot(month_counts, aes(x = month, y = count, color = location, group = location)) + geom_line() + geom_point() + labs (x = "Month", y = "contributions", title = "Monthly SPKU Contribution by Region in 2021", color = "Region") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+we want to see the occurrence of air pollution levels in each region in 2021
+
+```{r}
+ggplot(category_counts, aes(x = location, y = categori, fill = count)) + geom_tile() + scale_fill_gradient(low= "skyblue", high = "blue") + labs(x = "Location", y = "Category", title = "Occurence of Air Poluttion Level to Each Region in 2021") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+we also want to see where the occurrance of air pollution level mainly in, and we can see that it mainly occurred in Taman Kota and Taman Lingkungan
+
+```{r}
+
+ggplot(greenmonth, aes(y = jenis, x = jumlah, fill = location)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Location", y = "Count", title = "Occurrence of Air Pollution Level to Each Region in 2021") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+library(ggmap)
+```
+
+we want to show the mapping of the total population in Jakarta but the API didn't work, we comment it so we can knit the file 
+
+
+map <- get_map(location = "Jakarta", zoom = 11)
+
+ggmap(map) + geom_point(data = totalgreen, aes(x = Longitude, y = Latitude, size = Total_Jumlah), color = "green", alpha = 0.8) + labs(title = "Total Population by Region in Jakarta") +
+  scale_size_continuous(name = "Total Population") +
+  theme(legend.position = "bottom") +
+  theme(axis.title = element_blank())
