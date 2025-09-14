@@ -1,2 +1,2 @@
 # Data-Mining-and-Visualization
-Project yang membahas mengenai Indeks Pencemaran Udara di Jakarta
+A data mining and visualization project analyzing air pollution levels in Jakarta. Produced interactive visualizations to identify pollution trends and seasonal patterns. Learned Python data cleaning and Tableau visualization.
